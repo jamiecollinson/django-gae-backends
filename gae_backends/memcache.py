@@ -2,13 +2,14 @@
   Django Cache Backend for the Google App Engine
 """
 import time
+import logging
 
 from django.core.cache.backends.base import BaseCache
 
 from google.appengine.api import memcache
 
-class MemcacheCache(BaseCache):
 
+class MemcacheCache(BaseCache):
     def __init__(self, location, params):
         super(MemcacheCache, self).__init__(params)
 
@@ -18,7 +19,7 @@ class MemcacheCache(BaseCache):
         way. Call this function to obtain a safe value for your timeout.
         """
         timeout = timeout or self.default_timeout
-        if timeout > 2592000: # 60*60*24*30, 30 days
+        if timeout > 2592000:  # 60*60*24*30, 30 days
             # See http://code.google.com/p/memcached/wiki/FAQ
             # "You can set expire times up to 30 days in the future. After that
             # memcached interprets it as a date, and will expire the item after
@@ -29,7 +30,10 @@ class MemcacheCache(BaseCache):
         return timeout
 
     def add(self, key, value, timeout=None, version=None):
-        return memcache.add(key, value, timeout=None, version=None)
+        key = self.make_key(key, version=version)
+        self.validate_key(key)
+
+        return memcache.add(key, value, self._get_memcache_timeout(timeout))
 
     def get(self, key, default=None, version=None):
         key = self.make_key(key, version=version)
@@ -71,7 +75,10 @@ class MemcacheCache(BaseCache):
         key = self.make_key(key, version=version)
         self.validate_key(key)
 
-        memcache.set(key, value, self._get_memcache_timeout(timeout))
+        try:
+            memcache.set(key, value, self._get_memcache_timeout(timeout))
+        except:
+            logging.warning('Could not save response in memcache - too large')
 
     def delete(self, key, version=None):
         key = self.make_key(key, version=version)
@@ -91,7 +98,8 @@ class MemcacheCache(BaseCache):
         memcache.delete_multi(map(l, keys))
 
     def clear(self):
-       return memcache.flush_all()
+        return memcache.flush_all()
+
 
 # For backwards compatibility
 class CacheClass(MemcacheCache):
